@@ -3,30 +3,53 @@ using UnityEngine;
 
 public class FPS_Controller : MonoBehaviour
 {
-    [SerializeField] private float speed;
-    [SerializeField] private float sensitivity;
+    [Header("Movement")]  
+    [SerializeField] private float walkSpeed;
+    [SerializeField] private float sprintSpeed;
+    [SerializeField] private float crouchSpeed;
+    private float speed;
+
+    [Header("Jumping")]
     [SerializeField] private float jumpHeight;
     private float gravity = -9.81f;
+    private float gravityMult = 3f;
 
     // Camera movement Axis
-    private float mouseY;
-    private float mouseX;
+    [Header("Camera")]
     [SerializeField] private float maxLook; // Max camera movement (up)
     [SerializeField] private float minLook; // Min camera movement (down)
+    [SerializeField] private float sensitivity;
+    private float mouseY;
+    private float mouseX;
 
+    [Header("Crouching")]
     private float crouchingTime = 2f;
-    private float crouchSpeedMult = 0.4f;
-    private float crouchHeight = 0.3f;
-    private float normalHeight = 1f;
-    private float offset;
+    private float crouchHeight = 0.7f;
+    private float normalHeight = 2f;
+
+    [Header("Keybinds")]
+    [SerializeField] private KeyCode jumpKey = KeyCode.Space;
+    [SerializeField] private KeyCode sprintKey = KeyCode.LeftShift;
+    [SerializeField] private KeyCode crouchKey = KeyCode.LeftControl;
+
+    private Vector3 offset = new Vector3(0, 1.5f, 0);
 
     [SerializeField] private Transform player;
     [SerializeField] private Camera playerCamera;
     [SerializeField] private CharacterController controller;
     private Vector3 velocity;
 
+    [Header("Checkers")]
     private bool crouching = false;
     private bool isGrounded = true;
+
+    public MovementState state;
+    public enum MovementState
+    {
+        walking,
+        sprinting,
+        airborn
+    }
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
@@ -45,9 +68,22 @@ public class FPS_Controller : MonoBehaviour
             velocity.y = 0;
         }
 
+        #region Player Movement
         float moveX = Input.GetAxis("Horizontal");
         float moveZ = Input.GetAxis("Vertical");
-        Vector3 move = transform.right * moveX + transform.forward * moveZ;
+        float moveY = velocity.y;
+        Vector3 move = transform.right * moveX + transform.forward * moveZ + transform.up * moveY;
+
+        if (!crouching)
+        {
+            controller.Move(move * walkSpeed * Time.deltaTime);
+        }
+
+        if (crouching)
+        {
+            controller.Move(move * crouchSpeed * Time.deltaTime);
+        }
+        #endregion
 
         #region Camera Movement
         mouseX = Input.GetAxis("Mouse X") * sensitivity;
@@ -64,27 +100,19 @@ public class FPS_Controller : MonoBehaviour
             velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
         }
 
-        velocity.y += gravity * Time.deltaTime;
+        ApplyGravity();
 
         #region Crouching
-        if (!crouching)
-        {
-            controller.Move(move * speed * Time.deltaTime);
-        }
+        
 
-        if (crouching)
+        if (Input.GetKeyDown(crouchKey))
         {
-            controller.Move(move * (speed * crouchSpeedMult) * Time.deltaTime);
-        }
-
-        if (Input.GetKeyDown(KeyCode.LeftControl))
-        {
-            Debug.Log("Crouched");
             crouching = !crouching;
         }
 
         if (crouching == true)
         {
+            Debug.Log("Crouched");
             controller.height = controller.height - crouchingTime * Time.deltaTime;
             if (controller.height <= crouchHeight)
             {
@@ -94,7 +122,15 @@ public class FPS_Controller : MonoBehaviour
 
         if (crouching == false)
         {
+            Debug.Log("Uncrouched");
             controller.height = controller.height + crouchingTime * Time.deltaTime;
+
+            if (controller.height < normalHeight)
+            {
+                player.gameObject.SetActive(false);
+                player.position = player.position + offset * Time.deltaTime;
+                player.gameObject.SetActive(true);
+            }
 
             if (controller.height >= normalHeight)
             {
@@ -102,7 +138,23 @@ public class FPS_Controller : MonoBehaviour
             }
         }
         #endregion
+    }
 
+    private void ApplyGravity()
+    {
+        //Debug.Log("Applying gravity");
+        if (controller.isGrounded)
+        {
+            //Debug.Log("IsGrounded" );
+
+            velocity.y = -1.0f;
+        }
+        else
+        {
+            //Debug.Log("notGrounded");
+            velocity.y += gravity * gravityMult * Time.deltaTime;
+        }
+        //Debug.Log(velocity.y);
 
     }
 }
