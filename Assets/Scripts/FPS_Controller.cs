@@ -1,6 +1,3 @@
-using System.Linq.Expressions;
-using System.Runtime.CompilerServices;
-using UnityEditor.Rendering;
 using UnityEngine;
 
 public class FPS_Controller : MonoBehaviour
