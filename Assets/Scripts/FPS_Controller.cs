@@ -1,3 +1,4 @@
+using UnityEditor.PackageManager;
 using UnityEngine;
 
 public class FPS_Controller : MonoBehaviour
@@ -7,6 +8,11 @@ public class FPS_Controller : MonoBehaviour
     [SerializeField] private float sprintSpeed;
     [SerializeField] private float crouchSpeed;
     private float speed; // current speed (changes from different states)
+
+    [Header("Speed smoothing")]
+    [SerializeField] private float speedAccel = 6f;
+    [SerializeField] private float speedDecel = 8f;
+    private float targetSpeed;
 
     [Header("Jumping")]
     [SerializeField] private float jumpHeight;
@@ -40,7 +46,6 @@ public class FPS_Controller : MonoBehaviour
     [SerializeField] private Transform player;
     [SerializeField] private Camera playerCamera;
     [SerializeField] private CharacterController controller;
-    private Vector3 velocity;
 
     [Header("Checkers")]
     private bool crouching = false;
@@ -49,6 +54,16 @@ public class FPS_Controller : MonoBehaviour
     private float cameraOriginalLocalY;
 
     private Vector3 momentum = Vector3.zero;
+
+    // physics velocity used by movement/gravity
+    private Vector3 velocityPhysics;
+
+    // public static fields for debug/UI (do NOT overwrite physics velocity)
+    static public Vector3 worldVelocity;    // instantaneous world-space velocity (m/s)
+    static public float horizontalSpeed;    // horizontal speed (m/s), scalar
+
+    // previous position for velocity calculation
+    private Vector3 previousPosition;
 
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
@@ -72,6 +87,15 @@ public class FPS_Controller : MonoBehaviour
         {
             cameraOriginalLocalY = 1.7f;
         }
+
+        previousPosition = transform.position;
+        worldVelocity = Vector3.zero;
+        horizontalSpeed = 0f;
+        velocityPhysics = Vector3.zero;
+
+        // walk speed is the initial speed
+        speed = walkSpeed;
+        targetSpeed = walkSpeed;
     }
 
     // Update is called once per frame
@@ -79,18 +103,59 @@ public class FPS_Controller : MonoBehaviour
     {
         isGrounded = controller.isGrounded;
 
-        if (isGrounded && velocity.y == 0)
+        if (isGrounded && velocityPhysics.y == 0)
         {
-            velocity.y = 0;
+            velocityPhysics.y = 0;
         }
 
         Crouch();
         Jump();
-        Sprint();
+
+        // --- speed management ---
+        // states: walking, sprinting, crouching
+        UpdateTargetSpeed();
+
+        // smoothly change speed towards target
+        SmoothSpeed();
+
         ApplyGravity();
         ApplyMovement();
         CameraMovement();
-        
+
+        // --- calculating velocity using position change for debug (m/s) ---
+        if (Time.deltaTime > 0f)
+        {
+            Vector3 delta = (transform.position - previousPosition) / Time.deltaTime;
+            // world-space instantaneous velocity (debug only)
+            worldVelocity = delta;
+            // horizontal speed (ignore vertical)
+            horizontalSpeed = new Vector3(delta.x, 0f, delta.z).magnitude;
+        }
+        previousPosition = transform.position;
+    }
+
+    private void UpdateTargetSpeed()
+    {
+        if (crouching)
+        {
+            targetSpeed = crouchSpeed;
+            return;
+        }
+
+        if (Input.GetKey(sprintKey))
+        {
+            targetSpeed = sprintSpeed;
+            return;
+        }
+
+        targetSpeed = walkSpeed;
+    }
+
+    private void SmoothSpeed()
+    {
+        // change speed towards target
+        float rate = (speed < targetSpeed) ? speedAccel : speedDecel;
+        speed = Mathf.MoveTowards(speed, targetSpeed, rate * Time.deltaTime);
     }
 
     private void ApplyMovement()
@@ -119,8 +184,8 @@ public class FPS_Controller : MonoBehaviour
             }
         }
 
-        // combine horizontal momentum with vertical velocity
-        Vector3 move = momentum + new Vector3(0, velocity.y, 0);
+        // combine horizontal momentum with vertical physics velocity
+        Vector3 move = momentum + new Vector3(0, velocityPhysics.y, 0);
         controller.Move(move * Time.deltaTime); // * deltaTime for frame rate independence
     }
 
@@ -139,12 +204,12 @@ public class FPS_Controller : MonoBehaviour
     {
         if (controller.isGrounded)
         {
-            if (velocity.y <= 0f)
-                velocity.y = -1.0f;
+            if (velocityPhysics.y <= 0f)
+                velocityPhysics.y = -1.0f;
         }
         else
         {
-            velocity.y += gravity * gravityMult * Time.deltaTime;
+            velocityPhysics.y += gravity * gravityMult * Time.deltaTime;
         }
     }
 
@@ -156,14 +221,9 @@ public class FPS_Controller : MonoBehaviour
             if (crouching)
             {
                 if (CanStandUp())
-                {
                     crouching = false;
-                }
                 else
-                {
-                    // if cant stand up - stay crouched
-                    crouching = true;
-                }
+                    crouching = true; // stay crouched
             }
             else
             {
@@ -172,15 +232,7 @@ public class FPS_Controller : MonoBehaviour
             }
         }
 
-        if (crouching)
-        {
-            speed = crouchSpeed;
-        }
-        else
-        {
-            speed = walkSpeed;
-        }
-
+        // speed assignment handled in UpdateTargetSpeed()
         float previousHeight = controller.height;
         float targetHeight = crouching ? crouchHeight : normalHeight;
 
@@ -256,26 +308,7 @@ public class FPS_Controller : MonoBehaviour
                 controller.Move(Vector3.up * 0.05f);
             }
 
-            velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity * gravityMult);
-        }
-    }
-
-    private void Sprint()
-    {
-        // if crouching, cannot sprint
-        if (crouching)
-        {
-            speed = crouchSpeed;
-            return;
-        }
-
-        if (Input.GetKey(sprintKey))
-        {
-            speed = sprintSpeed;
-        }
-        else
-        {
-            speed = walkSpeed;
+            velocityPhysics.y = Mathf.Sqrt(jumpHeight * -2f * gravity * gravityMult);
         }
     }
 }
